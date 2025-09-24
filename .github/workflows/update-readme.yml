@@ -1,5 +1,4 @@
-
-name: Update README
+name: Update GitHub Stats
 
 on:
   schedule:
@@ -13,10 +12,78 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
         
-      - name: Generate GitHub Activity in README
-        uses: jamesgeorge007/github-activity-readme@master
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Install dependencies
+        run: |
+          pip install requests PyGithub
+          
+      - name: Update README with custom stats
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_SECRET }}
-        with:
-          COMMIT_MSG: 'Update GitHub activity'
-          MAX_LINES: 10
+        run: |
+          python << 'EOF'
+          import os
+          import requests
+          from github import Github
+          from datetime import datetime, timedelta
+          
+          # Initialize GitHub API
+          g = Github(os.environ['GITHUB_TOKEN'])
+          user = g.get_user('vladKuzR')
+          
+          # Get recent activity including organizations
+          events = list(user.get_events()[:10])
+          
+          # Generate activity list
+          activity_lines = []
+          for event in events:
+              if event.type == 'PushEvent':
+                  activity_lines.append(f"🚀 Pushed to {event.repo.name}")
+              elif event.type == 'CreateEvent':
+                  activity_lines.append(f"✨ Created {event.payload.get('ref_type', 'repository')} in {event.repo.name}")
+              elif event.type == 'PullRequestEvent':
+                  action = event.payload['action']
+                  activity_lines.append(f"🔀 {action.title()} PR in {event.repo.name}")
+              elif event.type == 'IssuesEvent':
+                  action = event.payload['action']
+                  activity_lines.append(f"📋 {action.title()} issue in {event.repo.name}")
+              elif event.type == 'ForkEvent':
+                  activity_lines.append(f"🍴 Forked {event.repo.name}")
+              elif event.type == 'StarEvent':
+                  activity_lines.append(f"⭐ Starred {event.repo.name}")
+          
+          # Read current README
+          with open('README.md', 'r') as f:
+              content = f.read()
+          
+          # Replace activity section
+          start_marker = '<!--START_SECTION:activity-->'
+          end_marker = '<!--END_SECTION:activity-->'
+          
+          if start_marker in content and end_marker in content:
+              start_idx = content.find(start_marker) + len(start_marker)
+              end_idx = content.find(end_marker)
+              
+              new_activity = '\n' + '\n'.join([f"{i+1}. {line}" for i, line in enumerate(activity_lines[:5])]) + '\n'
+              
+              new_content = content[:start_idx] + new_activity + content[end_idx:]
+              
+              with open('README.md', 'w') as f:
+                  f.write(new_content)
+                  
+              print("README updated successfully!")
+          else:
+              print("Activity markers not found in README")
+          EOF
+          
+      - name: Commit changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md
+          git diff --staged --quiet || git commit -m "Update GitHub activity"
+          git push
